@@ -9,6 +9,8 @@ interface MensajeHistorial {
 interface PantallaActual {
   historia: string;
   opciones: string[];
+  impacto_vida: number;
+  texto_metrica: string;
 }
 
 export default function JuegoRolPage() {
@@ -17,7 +19,13 @@ export default function JuegoRolPage() {
   const [pantallaActual, setPantallaActual] = useState<PantallaActual | null>(null);
   const [historial, setHistorial] = useState<MensajeHistorial[]>([]);
   const [cargando, setCargando] = useState<boolean>(false);
+  const [escribiendo, setEscribiendo] = useState<boolean>(false);
   const historiaRef = useRef<HTMLDivElement>(null);
+  const [vida, setVida] = useState<number>(100);
+  const [turnos, setTurnos] = useState<number>(0);
+  const [textoMetrica, setTextoMetrica] = useState<string>('Salud');
+  const [errorServidor, setErrorServidor] = useState<string | null>(null);
+  const [ultimoHistorialFallido, setUltimoHistorialFallido] = useState<MensajeHistorial[] | null>(null);
 
   // Auto-scroll al fondo del texto mientras se escribe la historia
   useEffect(() => {
@@ -26,15 +34,13 @@ export default function JuegoRolPage() {
     }
   }, [pantallaActual?.historia]);
 
-  // Convierte **texto** en negrita (y *texto* en cursiva) manteniendo el streaming seguro
+  // Convierte **texto** en negrita (y *texto* en cursiva) de forma segura
   const renderizarTextoConFormato = (texto: string) => {
     if (!texto) return null;
 
-    // Divide por **negrita** o *cursiva*
     const partes = texto.split(/(\*\*.*?\*\*|\*[^*\n]+?\*)/g);
 
     return partes.map((parte, index) => {
-      // Caso: **Negrita**
       if (parte.startsWith('**') && parte.endsWith('**') && parte.length >= 4) {
         return (
           <strong key={index} className="font-bold text-white tracking-wide">
@@ -42,7 +48,6 @@ export default function JuegoRolPage() {
           </strong>
         );
       }
-      // Caso: *Cursiva*
       if (parte.startsWith('*') && parte.endsWith('*') && parte.length >= 2) {
         return (
           <em key={index} className="italic text-cyan-200">
@@ -54,56 +59,47 @@ export default function JuegoRolPage() {
     });
   };
 
-  // Parser tolerante: detecta ---OPCIONES--- o viñetas como * **Opción A:** si Gemini se desvía
-  const parsearTextoEnTiempoReal = (textoCompleto: string): PantallaActual => {
-    let parteHistoria = textoCompleto;
-    let parteOpciones = '';
+  // Muestra la historia palabra por palabra de forma fluida (efecto streaming en vivo)
+  const escribirTextoFluido = async (dataCompleta: PantallaActual) => {
+    setEscribiendo(true);
 
-    const separadores = ['---OPCIONES---', '===OPCIONES===', '### OPCIONES', '### Opciones'];
-    const separadorEncontrado = separadores.find(s => textoCompleto.includes(s));
+    const palabras = (dataCompleta.historia || '').split(' ');
+    let textoAcumulado = '';
 
-    if (separadorEncontrado) {
-      const partes = textoCompleto.split(separadorEncontrado);
-      parteHistoria = partes[0];
-      parteOpciones = partes.slice(1).join(separadorEncontrado);
-    } else {
-      // Si la IA no puso el separador pero empezó a listar "* **Opción" o "1."
-      const indiceOpciones = textoCompleto.search(/\n(?:\s*[\*\-]\s*\*\*Opción|\s*[\*\-]\s*Opción|\s*\d+[\.\)]\s+)/i);
-      if (indiceOpciones !== -1 && indiceOpciones > textoCompleto.length * 0.25) {
-        parteHistoria = textoCompleto.substring(0, indiceOpciones);
-        parteOpciones = textoCompleto.substring(indiceOpciones);
-      }
+    // Inicializamos el contenedor con texto vacío y sin opciones aún
+    setPantallaActual({
+      historia: '',
+      opciones: [],
+      impacto_vida: dataCompleta.impacto_vida,
+      texto_metrica: dataCompleta.texto_metrica,
+    });
+
+    // Añadimos palabra por palabra con ritmo dinámico
+    for (let i = 0; i < palabras.length; i++) {
+      textoAcumulado += (i > 0 ? ' ' : '') + palabras[i];
+      setPantallaActual(prev => (prev ? { ...prev, historia: textoAcumulado } : null));
+      await new Promise(resolve => setTimeout(resolve, 22)); // ~22ms por palabra para lectura natural
     }
 
-    // Extraer y limpiar cada opción para los botones
-    const opciones = parteOpciones
-      ? parteOpciones
-          .split('\n')
-          .map(linea => linea.trim())
-          // Evitar preguntas finales como "¿Qué camino eliges?"
-          .filter(linea => !linea.startsWith('¿') && !linea.startsWith('*¿'))
-          .filter(linea => /^(\*|\-|\d+[\.\)])/.test(linea) || /^Opción\s+[A-Za-z0-9]/i.test(linea))
-          .map(linea =>
-            linea
-              .replace(/^[\*\-]\s*/, '') // quitar viñeta * o -
-              .replace(/^\d+[\.\)]\s*/, '') // quitar números 1. o 1)
-              .replace(/^\*\*Opción\s+[A-Za-z0-9]+[:\.]?\*\*\s*/i, '') // quitar **Opción A:**
-              .replace(/^Opción\s+[A-Za-z0-9]+[:\.]?\s*/i, '') // quitar Opción A:
-              .replace(/^\*\*|\*\*$/g, '') // quitar negritas sueltas
-              .trim()
-          )
-          .filter(linea => linea.length > 0)
-          .slice(0, 3) // Garantizar máximo 3 botones
-      : [];
+    // Al finalizar la historia: revelamos las opciones y aplicamos la vida y el turno
+    setPantallaActual(dataCompleta);
 
-    return {
-      historia: parteHistoria.trim(),
-      opciones
-    };
+    if (dataCompleta.texto_metrica) {
+      setTextoMetrica(dataCompleta.texto_metrica);
+    }
+
+    setVida((vidaActual) => {
+      const nuevaVida = vidaActual + (dataCompleta.impacto_vida || 0);
+      return Math.max(0, Math.min(100, nuevaVida));
+    });
+
+    setTurnos((t) => t + 1);
+    setEscribiendo(false);
   };
 
   const procesarTurno = async (nuevoHistorial: MensajeHistorial[]) => {
     setCargando(true);
+    setErrorServidor(null);
     setPantallaActual(null);
 
     try {
@@ -113,31 +109,29 @@ export default function JuegoRolPage() {
         body: JSON.stringify({ historial: nuevoHistorial }),
       });
 
-      if (!response.ok || !response.body) {
-        throw new Error('Error al comunicarse con la API');
+      if (!response.ok) {
+        const errorData = await response.json().catch(() => ({}));
+        throw new Error(errorData.error || 'Servidores de IA saturados momentáneamente');
       }
 
-      const reader = response.body.getReader();
-      const decoder = new TextDecoder();
-      let textoAcumulado = '';
+      const data: PantallaActual = await response.json();
 
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        textoAcumulado += decoder.decode(value, { stream: true });
-        setPantallaActual(parsearTextoEnTiempoReal(textoAcumulado));
-      }
-
+      // Guardamos en el historial para mantener la memoria intacta
       setHistorial([
         ...nuevoHistorial,
-        { role: 'model', parts: [{ text: textoAcumulado }] }
+        { role: 'model', parts: [{ text: JSON.stringify(data) }] }
       ]);
 
-    } catch (error) {
+      setUltimoHistorialFallido(null);
+      setCargando(false);
+
+      // Desencadenamos la escritura fluida de la historia
+      await escribirTextoFluido(data);
+
+    } catch (error: any) {
       console.error('Error:', error);
-      alert('Se produjo una anomalía en la conexión. Inténtalo de nuevo.');
-    } finally {
+      setErrorServidor(error?.message || 'Error al procesar el turno con el servidor.');
+      setUltimoHistorialFallido(nuevoHistorial);
       setCargando(false);
     }
   };
@@ -150,7 +144,9 @@ export default function JuegoRolPage() {
     const mensajeInicial: MensajeHistorial[] = [
       { 
         role: 'user', 
-        parts: [{ text: `Comienza una aventura con la temática: "${tematica}". Escribe la introducción y luego coloca exactamente la línea '---OPCIONES---' seguida de 3 opciones numeradas.` }] 
+        parts: [{ 
+          text: `Comienza una aventura con la temática: "${tematica}". Escribe exactamente 2 párrafos de unas 4 líneas cada uno. Utiliza un lenguaje inclusivo y neutro en segunda persona sin asumir el género de quien juega, define la métrica de vida y ofrece 3 opciones.` 
+        }] 
       }
     ];
     
@@ -159,9 +155,17 @@ export default function JuegoRolPage() {
   };
 
   const elegirOpcion = (opcionSeleccionada: string) => {
+    const esTurnoFinal = turnos >= 7;
+
+    let textoEleccion = `El jugador elige la acción: "${opcionSeleccionada}". Recuerda escribir exactamente 2 párrafos de unas 4 líneas y mantener un lenguaje neutro e inclusivo en segunda persona.`;
+
+    if (esTurnoFinal) {
+      textoEleccion += " INSTRUCCIÓN OBLIGATORIA DEL SISTEMA: Este es el TURNO 8 y FINAL. Narra la conclusión definitiva en 2 párrafos y devuelve la lista 'opciones' totalmente VACÍA [].";
+    }
+
     const nuevoHistorial: MensajeHistorial[] = [
       ...historial,
-      { role: 'user', parts: [{ text: `El jugador elige la acción: "${opcionSeleccionada}". Continúa la historia y coloca al final la línea '---OPCIONES---' con las siguientes 3 opciones.` }] }
+      { role: 'user', parts: [{ text: textoEleccion }] }
     ];
     
     setHistorial(nuevoHistorial);
@@ -173,6 +177,11 @@ export default function JuegoRolPage() {
     setPantallaActual(null);
     setHistorial([]);
     setTematica('');
+    setVida(100);
+    setTurnos(0);
+    setTextoMetrica('Salud');
+    setErrorServidor(null);
+    setUltimoHistorialFallido(null);
   };
 
   return (
@@ -207,7 +216,7 @@ export default function JuegoRolPage() {
               <input
                 id="tematica"
                 type="text"
-                placeholder="Ej: Cyberpunk oscuro, Fantasía medieval con dragones, Terror espacial..."
+                placeholder="Ej: Cyberpunk oscuro, Fantasía medieval con dragones, Terror espacial, Cita en un restaurante..."
                 value={tematica}
                 onChange={(e) => setTematica(e.target.value)}
                 className="bg-slate-950 border border-cyan-900 focus:border-cyan-400 focus:ring-1 focus:ring-cyan-400 text-cyan-50 p-4 rounded-lg outline-none transition-all placeholder:text-slate-600"
@@ -224,56 +233,144 @@ export default function JuegoRolPage() {
             </button>
           </form>
         ) : (
-          
-          /* PANTALLA DE JUEGO */
-          <div className="flex flex-col gap-8">
-            {/* Contenedor de la Historia */}
-            <div 
-              ref={historiaRef}
-              className="bg-slate-900/80 border-l-4 border-cyan-500 p-6 md:p-8 rounded-r-xl shadow-[0_0_20px_rgba(6,182,212,0.1)] max-h-[280px] md:max-h-[340px] overflow-y-auto scroll-smooth"
-            >
-              {cargando && !pantallaActual?.historia ? (
-                <div className="flex items-center justify-center h-full text-cyan-500 animate-pulse font-mono py-8">
-                  Sintonizando con el Máster...
+          <>
+            {/* HUD DE JUEGO: BARRA DE VIDA Y CONTADOR DE TURNOS */}
+            <div className="bg-slate-900/90 border border-slate-800 p-4 rounded-xl flex flex-col md:flex-row gap-4 justify-between items-center shadow-lg mb-8">
+              {/* Métrica Dinámica y Barra */}
+              <div className="w-full md:w-2/3">
+                <div className="flex justify-between text-xs uppercase tracking-widest font-mono mb-1.5">
+                  <span className="text-cyan-400 font-bold">{textoMetrica}</span>
+                  <span className={vida <= 25 ? "text-red-400 font-bold animate-pulse" : "text-slate-300"}>
+                    {vida} / 100
+                  </span>
+                </div>
+                <div className="w-full bg-slate-950 h-3 rounded-full overflow-hidden border border-slate-800">
+                  <div 
+                    className={`h-full transition-all duration-700 ease-out rounded-full ${
+                      vida > 50 ? 'bg-gradient-to-r from-cyan-500 to-emerald-400' :
+                      vida > 25 ? 'bg-gradient-to-r from-amber-500 to-orange-500' :
+                      'bg-gradient-to-r from-red-600 to-rose-500'
+                    }`}
+                    style={{ width: `${vida}%` }}
+                  />
+                </div>
+              </div>
+                  
+              {/* Contador de Turnos */}
+              <div className="flex items-center gap-2 font-mono text-xs uppercase tracking-wider text-slate-400">
+                <span>Progreso:</span>
+                <span className="text-fuchsia-400 font-bold text-sm bg-slate-950 px-2.5 py-1 rounded border border-fuchsia-900/50">
+                  Turno {turnos} / 8
+                </span>
+              </div>
+            </div>
+            
+            {/* PANTALLA DE JUEGO */}
+            <div className="flex flex-col gap-8">
+              {/* Contenedor de la Historia */}
+              <div 
+                ref={historiaRef}
+                className="bg-slate-900/80 border-l-4 border-cyan-500 p-6 md:p-8 rounded-r-xl shadow-[0_0_20px_rgba(6,182,212,0.1)] max-h-[280px] md:max-h-[340px] overflow-y-auto scroll-smooth"
+              >
+                {cargando && !pantallaActual?.historia ? (
+                  <div className="flex items-center justify-center h-full text-cyan-500 animate-pulse font-mono py-8">
+                    Sintonizando con el Máster...
+                  </div>
+                ) : (
+                  <div className="text-base md:text-lg leading-relaxed text-slate-300 font-serif whitespace-pre-wrap">
+                    {renderizarTextoConFormato(pantallaActual?.historia || '')}
+                    {/* Cursor parpadeante mientras se escribe el texto */}
+                    {(cargando || escribiendo) && (
+                      <span className="inline-block w-2.5 h-5 ml-1 bg-cyan-400 animate-pulse align-middle" />
+                    )}
+                  </div>
+                )}
+              </div>
+
+              {/* AVISO DE CONGESTIÓN TEMPORAL CON BOTÓN DE REINTENTO */}
+              {errorServidor && (
+                <div className="bg-amber-950/50 border border-amber-600/70 p-4 rounded-xl flex flex-col md:flex-row items-center justify-between gap-3 text-amber-200 text-sm">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xl">⚠️</span>
+                    <span>{errorServidor}</span>
+                  </div>
+                  <button
+                    onClick={() => ultimoHistorialFallido && procesarTurno(ultimoHistorialFallido)}
+                    disabled={cargando}
+                    className="bg-amber-600 hover:bg-amber-500 text-slate-950 font-bold uppercase tracking-wider px-4 py-2 rounded-lg transition-all text-xs cursor-pointer shrink-0"
+                  >
+                    {cargando ? 'Reintentando...' : 'Reintentar acción'}
+                  </button>
+                </div>
+              )}
+
+              {/* CONDICIONALES DE FIN DE JUEGO O CONTINUACIÓN */}
+
+              {/* 1. DERROTA: La métrica llegó a 0 */}
+              {!escribiendo && vida <= 0 ? (
+                <div className="bg-red-950/40 border border-red-800/80 p-8 rounded-xl text-center flex flex-col items-center gap-4 animate-fade-in shadow-[0_0_30px_rgba(239,68,68,0.2)]">
+                  <h2 className="text-3xl font-bold tracking-widest text-red-500 font-mono">
+                    SIMULACIÓN FALLIDA: GAME OVER
+                  </h2>
+                  <p className="text-slate-300 max-w-md">
+                    Tu nivel de <span className="text-red-400 font-semibold">{textoMetrica}</span> se ha agotado por completo. Las consecuencias han sido fatales para la misión.
+                  </p>
+                  <button
+                    onClick={reiniciarPartida}
+                    className="bg-red-600 hover:bg-red-500 text-white font-bold uppercase tracking-widest px-6 py-3 rounded-lg transition-all hover:shadow-[0_0_15px_rgba(239,68,68,0.5)] cursor-pointer mt-2"
+                  >
+                    Reintentar Simulación
+                  </button>
+                </div>
+              ) : !escribiendo && pantallaActual && pantallaActual.opciones.length === 0 ? (
+
+                /* 2. VICTORIA: Se alcanzó el final de la historia */
+                <div className="bg-emerald-950/40 border border-emerald-800/80 p-8 rounded-xl text-center flex flex-col items-center gap-4 animate-fade-in shadow-[0_0_30px_rgba(16,185,129,0.2)]">
+                  <h2 className="text-3xl font-bold tracking-widest text-emerald-400 font-mono">
+                    AVENTURA COMPLETADA
+                  </h2>
+                  <p className="text-slate-300 max-w-md">
+                    Has alcanzado el desenlace de la historia habiendo mantenido tu <span className="text-emerald-400 font-semibold">{textoMetrica}</span> en un <span className="font-bold">{vida}%</span>.
+                  </p>
+                  <button
+                    onClick={reiniciarPartida}
+                    className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold uppercase tracking-widest px-6 py-3 rounded-lg transition-all hover:shadow-[0_0_15px_rgba(16,185,129,0.5)] cursor-pointer mt-2"
+                  >
+                    Jugar Otra Aventura
+                  </button>
                 </div>
               ) : (
-                <div className="text-base md:text-lg leading-relaxed text-slate-300 font-serif whitespace-pre-wrap">
-                  {renderizarTextoConFormato(pantallaActual?.historia || '')} {/* 👈 Cambiado aquí */}
-                  {cargando && (!pantallaActual?.opciones.length) && (
-                    <span className="inline-block w-2.5 h-5 ml-1 bg-cyan-400 animate-pulse align-middle" />
+              
+                /* 3. PARTIDA EN CURSO: Mostrar opciones cuando termine de escribir */
+                <div className="grid grid-cols-1 gap-4">
+                  {cargando || escribiendo ? (
+                    <div className="text-center text-fuchsia-500 animate-pulse uppercase tracking-widest text-sm font-bold font-mono py-2">
+                      {cargando ? 'Calculando consecuencias...' : 'Sintonizando opciones...'}
+                    </div>
+                  ) : (
+                    pantallaActual?.opciones.map((opcion, index) => (
+                      <button
+                        key={index}
+                        onClick={() => elegirOpcion(opcion)}
+                        disabled={cargando || escribiendo}
+                        className="group relative text-left bg-slate-900 border border-slate-800 hover:border-fuchsia-500 p-4 rounded-lg transition-all overflow-hidden disabled:opacity-50 cursor-pointer"
+                      >
+                        <div className="absolute inset-0 bg-gradient-to-r from-fuchsia-500/10 to-transparent translate-x-[-100%] group-hover:translate-x-0 transition-transform duration-300 ease-out" />
+                        <span className="relative z-10 flex gap-4 items-center">
+                          <span className="text-fuchsia-500 font-mono font-bold text-sm">
+                            0{index + 1}
+                          </span>
+                          <span className="text-cyan-50 group-hover:text-white transition-colors">
+                            {renderizarTextoConFormato(opcion)}
+                          </span>
+                        </span>
+                      </button>
+                    ))
                   )}
                 </div>
               )}
             </div>
-
-            {/* Contenedor de Opciones */}
-            <div className="grid grid-cols-1 gap-4">
-              {cargando && (!pantallaActual?.opciones || pantallaActual.opciones.length === 0) ? (
-                <div className="text-center text-fuchsia-500 animate-pulse uppercase tracking-widest text-sm font-bold font-mono py-2">
-                  Procesando posibles caminos...
-                </div>
-              ) : (
-                pantallaActual?.opciones.map((opcion, index) => (
-                  <button
-                    key={index}
-                    onClick={() => elegirOpcion(opcion)}
-                    disabled={cargando}
-                    className="group relative text-left bg-slate-900 border border-slate-800 hover:border-fuchsia-500 p-4 rounded-lg transition-all overflow-hidden disabled:opacity-50 cursor-pointer"
-                  >
-                    <div className="absolute inset-0 bg-gradient-to-r from-fuchsia-500/10 to-transparent translate-x-[-100%] group-hover:translate-x-0 transition-transform duration-300 ease-out" />
-                    <span className="relative z-10 flex gap-4 items-center">
-                      <span className="text-fuchsia-500 font-mono font-bold text-sm">
-                        0{index + 1}
-                      </span>
-                      <span className="text-cyan-50 group-hover:text-white transition-colors">
-                        {renderizarTextoConFormato(opcion)}
-                      </span>
-                    </span>
-                  </button>
-                ))
-              )}
-            </div>
-          </div>
+          </> 
         )}
       </div>
     </main>
