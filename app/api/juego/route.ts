@@ -28,9 +28,10 @@ export async function POST(request: Request) {
           "   - Párrafo 1: Consecuencia inmediata de la acción y ambientación del entorno.\n" +
           "   - Párrafo 2: Conflicto, avance del evento y el dilema en el que queda el personaje.\n" +
           "2. No agregues preguntas finales (como '¿Qué decides?') ni opciones dentro de la historia.\n" +
-          "3. Al terminar los 2 párrafos, añade una línea con este separador exacto:\n" +
+          "3. No quiero que sea sexista, que hable de los dos géneros, a menos que sea intencional.\n" +
+          "4. Al terminar los 2 párrafos, añade una línea con este separador exacto:\n" +
           "---OPCIONES---\n" +
-          "4. En las siguientes 3 líneas, escribe exactamente 3 opciones numeradas (1., 2. y 3.), breves e interesantes.\n\n" +
+          "5. En las siguientes 3 líneas, escribe exactamente 3 opciones numeradas (1., 2. y 3.), breves e interesantes.\n\n" +
           "IMPORTANTE: Respeta siempre el separador '---OPCIONES---'.",
       },
     });
