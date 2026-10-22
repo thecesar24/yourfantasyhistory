@@ -26,6 +26,7 @@ export default function JuegoRolPage() {
   const [textoMetrica, setTextoMetrica] = useState<string>('Salud');
   const [errorServidor, setErrorServidor] = useState<string | null>(null);
   const [ultimoHistorialFallido, setUltimoHistorialFallido] = useState<MensajeHistorial[] | null>(null);
+  const [ultimoImpacto, setUltimoImpacto] = useState<number | null>(null);
 
   // Auto-scroll al fondo del texto mientras se escribe la historia
   useEffect(() => {
@@ -84,8 +85,12 @@ export default function JuegoRolPage() {
     // Al finalizar la historia: revelamos las opciones y aplicamos la vida y el turno
     setPantallaActual(dataCompleta);
 
-    if (dataCompleta.texto_metrica) {
+    if (dataCompleta.texto_metrica && turnos === 0) {
       setTextoMetrica(dataCompleta.texto_metrica);
+    }
+
+    if (dataCompleta.impacto_vida !== undefined) {
+      setUltimoImpacto(dataCompleta.impacto_vida);
     }
 
     setVida((vidaActual) => {
@@ -166,7 +171,7 @@ export default function JuegoRolPage() {
   const elegirOpcion = (opcionSeleccionada: string) => {
     const esTurnoFinal = turnos >= 7;
 
-    let textoEleccion = `El jugador elige la acción: "${opcionSeleccionada}". Recuerda escribir exactamente 2 párrafos de unas 4 líneas y mantener un lenguaje neutro e inclusivo en segunda persona.`;
+    let textoEleccion = `El jugador elige la acción: "${opcionSeleccionada}". Estado actual de ${textoMetrica}: ${vida}/100. Recuerda escribir exactamente 2 párrafos de unas 4 líneas y mantener un lenguaje neutro e inclusivo en segunda persona.`;
 
     if (esTurnoFinal) {
       textoEleccion += " INSTRUCCIÓN OBLIGATORIA DEL SISTEMA: Este es el TURNO 8 y FINAL. Narra la conclusión definitiva en 2 párrafos y devuelve la lista 'opciones' totalmente VACÍA [].";
@@ -191,6 +196,7 @@ export default function JuegoRolPage() {
     setTextoMetrica('Salud');
     setErrorServidor(null);
     setUltimoHistorialFallido(null);
+    setUltimoImpacto(null);
   };
 
   return (
@@ -247,8 +253,18 @@ export default function JuegoRolPage() {
             <div className="bg-slate-900/90 border border-slate-800 p-4 rounded-xl flex flex-col md:flex-row gap-4 justify-between items-center shadow-lg mb-8">
               {/* Métrica Dinámica y Barra */}
               <div className="w-full md:w-2/3">
-                <div className="flex justify-between text-xs uppercase tracking-widest font-mono mb-1.5">
-                  <span className="text-cyan-400 font-bold">{textoMetrica}</span>
+                <div className="flex justify-between items-center text-xs uppercase tracking-widest font-mono mb-1.5">
+                  <div className="flex items-center gap-2">
+                    <span className="text-cyan-400 font-bold">{textoMetrica}</span>
+                    {/* Badge del último cambio de salud */}
+                    {ultimoImpacto !== null && ultimoImpacto !== 0 && !escribiendo && (
+                      <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                        ultimoImpacto > 0 ? 'bg-emerald-950 text-emerald-400 border border-emerald-700/50' : 'bg-red-950 text-red-400 border border-red-700/50'
+                      }`}>
+                        {ultimoImpacto > 0 ? `+${ultimoImpacto}` : ultimoImpacto}
+                      </span>
+                    )}
+                  </div>
                   <span className={vida <= 25 ? "text-red-400 font-bold animate-pulse" : "text-slate-300"}>
                     {vida} / 100
                   </span>
