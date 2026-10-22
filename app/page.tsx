@@ -78,7 +78,7 @@ export default function JuegoRolPage() {
     for (let i = 0; i < palabras.length; i++) {
       textoAcumulado += (i > 0 ? ' ' : '') + palabras[i];
       setPantallaActual(prev => (prev ? { ...prev, historia: textoAcumulado } : null));
-      await new Promise(resolve => setTimeout(resolve, 22)); // ~22ms por palabra para lectura natural
+      await new Promise(resolve => setTimeout(resolve, 12)); // ~12ms por palabra para lectura natural
     }
 
     // Al finalizar la historia: revelamos las opciones y aplicamos la vida y el turno
@@ -129,8 +129,17 @@ export default function JuegoRolPage() {
       await escribirTextoFluido(data);
 
     } catch (error: any) {
-      console.error('Error:', error);
-      setErrorServidor(error?.message || 'Error al procesar el turno con el servidor.');
+      console.error('Error de conexión:', error);
+
+      // Filtro de seguridad: si el mensaje tiene formato JSON técnico, mostramos texto limpio
+      let mensajeUsuario = 'La conexión con el Máster se ha interrumpido momentáneamente.';
+      const mensajeOriginal = error?.message || '';
+
+      if (mensajeOriginal && !mensajeOriginal.includes('{') && !mensajeOriginal.includes('v1beta')) {
+        mensajeUsuario = mensajeOriginal;
+      }
+
+      setErrorServidor(mensajeUsuario);
       setUltimoHistorialFallido(nuevoHistorial);
       setCargando(false);
     }
@@ -277,12 +286,16 @@ export default function JuegoRolPage() {
                     Sintonizando con el Máster...
                   </div>
                 ) : (
-                  <div className="text-base md:text-lg leading-relaxed text-slate-300 font-serif whitespace-pre-wrap">
-                    {renderizarTextoConFormato(pantallaActual?.historia || '')}
-                    {/* Cursor parpadeante mientras se escribe el texto */}
-                    {(cargando || escribiendo) && (
-                      <span className="inline-block w-2.5 h-5 ml-1 bg-cyan-400 animate-pulse align-middle" />
-                    )}
+                  <div className="text-base md:text-lg leading-relaxed text-slate-300 font-serif space-y-4">
+                    {(pantallaActual?.historia || '').split(/\n\s*\n/).map((parrafo, idx, arr) => (
+                      <p key={idx}>
+                        {renderizarTextoConFormato(parrafo.trim())}
+                        {/* Cursor parpadeante solo al final del último párrafo mientras escribe */}
+                        {idx === arr.length - 1 && (cargando || escribiendo) && (
+                          <span className="inline-block w-2.5 h-5 ml-1 bg-cyan-400 animate-pulse align-middle" />
+                        )}
+                      </p>
+                    ))}
                   </div>
                 )}
               </div>

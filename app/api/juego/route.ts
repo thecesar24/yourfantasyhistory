@@ -1,5 +1,15 @@
 import { NextResponse } from 'next/server';
-import { GoogleGenAI } from '@google/genai';
+import { GoogleGenAI, ThinkingLevel } from '@google/genai';
+
+// ⏱️ Guardián de tiempo: Si una llamada tarda más de "ms", la corta y pasa al siguiente modelo
+const conTimeout = (promesa: Promise<any>, ms: number) => {
+  return Promise.race([
+    promesa,
+    new Promise((_, reject) =>
+      setTimeout(() => reject(new Error(`Timeout de ${ms / 1000}s excedido`)), ms)
+    ),
+  ]);
+};
 
 export async function POST(request: Request) {
   try {
@@ -19,78 +29,94 @@ export async function POST(request: Request) {
 
     const config = {
       responseMimeType: "application/json",
+      maxOutputTokens: 1500, // 👈 Margen amplio para que NUNCA se corte el JSON
+      thinkingConfig: {
+        thinkingLevel: ThinkingLevel.MINIMAL, // 👈 Apaga el razonamiento lento en la serie 3 (evita los 25s de espera)
+      },
       responseSchema: {
         type: "OBJECT",
         properties: {
           historia: { 
             type: "STRING", 
-            description: "Narración de la escena dividida exactamente en 2 párrafos de unas 4 líneas cada uno." 
+            description: "Narración de EXACTAMENTE dos párrafos breves separados por '\\n\\n'. Cada párrafo debe tener entre 35 y 45 palabras." 
           },
           opciones: {
             type: "ARRAY",
             items: { type: "STRING" },
-            description: "3 opciones posibles breves. Si es el final de la historia, debe ser un array vacío []."
+            description: "Exactamente 3 opciones de acción distintas. Si y solo si es el turno final 8, array vacío []."
           },
           impacto_vida: {
             type: "INTEGER",
-            description: "Puntos que suma o resta esta situación (-35 a +15). Negativo si sufre daño o yerra, positivo si acierta, 0 si es neutro."
+            description: "Impacto numérico entre -30 y +15. Nunca uses 0 salvo irrelevancia total."
           },
           texto_metrica: {
             type: "STRING",
-            description: "Nombre conceptual de la vida según la temática (ej: 'Paciencia de tu pareja', 'Cordura', 'Oxígeno', 'Salud')."
+            description: "Nombre conceptual de la métrica."
           }
         },
         required: ["historia", "opciones", "impacto_vida", "texto_metrica"]
       },
       systemInstruction:
-        "Actúa como el Máster de una partida de rol interactiva con consecuencias reales.\n\n" +
-        "REGLAS NARRATIVAS OBLIGATORIAS:\n" +
-        "1. ESTRUCTURA DE EXACTAMENTE 2 PÁRRAFOS: Escribe el campo 'historia' con exactamente 2 párrafos de aproximadamente 4 líneas cada uno:\n" +
-        "   - Párrafo 1: Consecuencia inmediata de la acción previa y ambientación sensorial del entorno.\n" +
-        "   - Párrafo 2: Conflicto, avance del evento y el dilema o momento de tensión en el que queda el personaje.\n" +
-        "2. GÉNERO NEUTRO E INCLUSIVO: Dirígete siempre a quien juega en segunda persona ('abres la puerta', 'observas', 'sientes'). Mantén un género neutro (usa fórmulas como 'te invade el cansancio' en vez de 'estás cansado/a', o 'en soledad' en vez de 'solo/a'), a menos que quien juegue especifique expresamente su género en la temática.\n" +
-        "3. NO hagas preguntas reflexivas finales (como '¿Qué haces?') ni pongas opciones dentro del texto de la historia.\n" +
-        "4. SISTEMA DE MÉTRICA DINÁMICA: Define en 'texto_metrica' qué mide la vida según la temática y mantén coherente ese concepto. Asigna en 'impacto_vida' un entero realista con las consecuencias de la acción.\n" +
-        "5. CIERRE NARRATIVO: Si el mensaje indica que es el turno final, redacta el desenlace definitivo en 'historia' y devuelve 'opciones' como un array vacío []."
+        "Actúa como el Máster de una partida de rol interactiva.\n\n" +
+        "REGLAS:\n" +
+        "1. EXACTAMENTE 2 PÁRRAFOS: Tu campo 'historia' DEBE contener exactamente 2 párrafos separados por '\\n\\n'. Cada párrafo de 35 a 45 palabras.\n" +
+        "2. 8 TURNOS OBLIGATORIOS: Prohibido terminar la partida antes del Turno 8. Del turno 1 al 7 ofrece siempre exactamente 3 opciones.\n" +
+        "3. MÉTRICA VIVA: Si comete un error, incomoda o yerra, resta entre -10 y -35. Si acierta o conecta, suma entre +5 y +15.\n" +
+        "4. GÉNERO NEUTRO: Segunda persona neutra a menos que se indique género.\n" +
+        "5. CIERRE: En el TURNO 8 y FINAL, concluye en 2 párrafos y devuelve 'opciones' como []."
     };
 
-
     // 🛡️ LISTA DE MODELOS CON RESPALDO (FALLBACK)
-    const modelos = ['gemini-3.5-flash', 'gemini-3.5-flash-lite', 'gemini-3.6-flash', 'gemini-3.6-flash-lite', 'gemini-3.7-flash', 'gemini-3.7-flash-lite', 'gemini-3.8-flash'];
-    let response = null;
+    const modelos = [
+      'gemini-3.5-flash-lite', // ⚡ El más rápido de la plataforma (~350 tokens/s)
+      'gemini-3.6-flash',      // ⚖️ Muy rápido, gran estabilidad
+      'gemini-3.8-flash',      // 🧠 Máxima riqueza narrativa
+      'gemini-flash-latest',   // 🔄 Respaldo dinámico oficial de Google
+    ];
+
     let ultimoError = null;
+    let juegoData = null;
 
     for (const model of modelos) {
       try {
-        response = await ai.models.generateContent({
-          model,
-          contents: historial,
-          config,
-        });
+        // 🛡️ Si un modelo no responde en 12 segundos, lo cancela y salta al siguiente
+        const response: any = await conTimeout(
+          ai.models.generateContent({
+            model,
+            contents: historial,
+            config,
+          }),
+          12000 // 12 segundos máximo por intento
+        );
+
         if (response?.text) {
-          break; // Éxito, salimos del bucle
+          juegoData = JSON.parse(response.text);
+          break; // Éxito completo
         }
       } catch (err: any) {
         ultimoError = err;
-        console.warn(`⚠️ Modelo ${model} no disponible (${err?.status || '503'}). Probando alternativa...`);
-        if (err?.status !== 503 && err?.status !== 429) {
-          throw err;
-        }
+        console.warn(`⚠️ [${model}] fallo o timeout (${err?.message || err?.status}). Probando siguiente...`);
+        continue;
       }
     }
 
-    if (!response || !response.text) {
-      throw ultimoError || new Error('Servidores de Google no disponibles.');
+    if (!juegoData) {
+      throw ultimoError || new Error('No se pudo generar una respuesta válida de la IA.');
     }
 
-    const juegoData = JSON.parse(response.text);
     return NextResponse.json(juegoData);
 
   } catch (error: any) {
-    console.error("❌ ERROR FINAL EN /api/juego:", error);
+    console.error("❌ ERROR INTERNO /api/juego:", error);
+    const esSaturacion = error?.status === 503 || error?.status === 429;
+    
     return NextResponse.json(
-      { error: error?.message || 'Error interno del servidor' },
-      { status: error?.status === 503 ? 503 : 500 }
+      { 
+        error: esSaturacion 
+          ? 'Los servidores de la red neuronal están saturados temporalmente. Por favor, pulsa reintentar.'
+          : 'Se ha producido una interferencia en la transmisión con el Máster. Pulsa reintentar.'
+      },
+      { status: esSaturacion ? 503 : 500 }
     );
   }
 }
