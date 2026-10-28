@@ -35,6 +35,40 @@ export default function JuegoRolPage() {
     }
   }, [pantallaActual?.historia]);
 
+  useEffect(() => {
+    const manejarTeclado = (e: KeyboardEvent) => {
+      // 1. Ignorar si el usuario está escribiendo en un campo de texto
+      if (e.target instanceof HTMLInputElement || e.target instanceof HTMLTextAreaElement) {
+        return;
+      }
+
+      // 2. Solo actuar si está en juego, no está cargando ni escribiendo, y hay opciones disponibles
+      if (!enJuego || cargando || escribiendo || !pantallaActual?.opciones?.length || vida <= 0) {
+        return;
+      }
+
+      // 3. Mapeo de teclas normales y del teclado numérico
+      const mapaTeclas: { [key: string]: number } = {
+        '1': 0,
+        '2': 1,
+        '3': 2,
+        'Numpad1': 0,
+        'Numpad2': 1,
+        'Numpad3': 2,
+      };
+
+      const indiceOpcion = mapaTeclas[e.code] ?? mapaTeclas[e.key];
+
+      // 4. Si la tecla corresponde a una opción existente, la ejecutamos
+      if (indiceOpcion !== undefined && pantallaActual.opciones[indiceOpcion]) {
+        elegirOpcion(pantallaActual.opciones[indiceOpcion]);
+      }
+    };
+
+    window.addEventListener('keydown', manejarTeclado);
+    return () => window.removeEventListener('keydown', manejarTeclado);
+  }, [enJuego, cargando, escribiendo, pantallaActual, vida, turnos, historial]);
+
   // Convierte **texto** en negrita (y *texto* en cursiva) de forma segura
   const renderizarTextoConFormato = (texto: string) => {
     if (!texto) return null;
@@ -392,6 +426,10 @@ export default function JuegoRolPage() {
                           <span className="text-cyan-50 group-hover:text-white transition-colors">
                             {renderizarTextoConFormato(opcion)}
                           </span>
+                          {/* Indicador de tecla en PC */}
+                          <kbd className="hidden md:inline-block font-mono text-[10px] text-slate-500 border border-slate-800 bg-slate-950 px-2 py-0.5 rounded group-hover:text-cyan-400 group-hover:border-cyan-500/50 transition-colors">
+                            [{index + 1}]
+                          </kbd>
                         </span>
                       </button>
                     ))
