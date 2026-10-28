@@ -233,6 +233,34 @@ export default function JuegoRolPage() {
     setUltimoImpacto(null);
   };
 
+  const [copiado, setCopiado] = useState(false);
+
+  const compartirCronica = () => {
+
+    const resultado = vida <= 0 
+      ? `💀 Caído en combate / Derrota (Turno ${turnos}/10)` 
+      : `🏆 Victoria / Superviviente (Turno ${turnos}/10)`;
+
+    return [
+      `📜 CRÓNICA DE MI AVENTURA`,
+      `🎭 Misión: ${tematica}`,
+      `${resultado}`,
+      `🩸 ${textoMetrica} final: ${vida}/100`,
+      `🌐 ¿Puedes superarme en?: ${window.location.origin}`
+    ].join('\n');
+  };
+
+  const copiarAlPortapapeles = async () => {
+    try {
+      const textoACopiar = compartirCronica();
+      await navigator.clipboard.writeText(textoACopiar);
+      setCopiado(true);
+      setTimeout(() => setCopiado(false), 2000);
+    } catch (err) {
+      console.error('Error al copiar al portapapeles:', err);
+    }
+  };
+
   return (
     <main className="min-h-screen bg-slate-950 text-cyan-50 font-sans selection:bg-fuchsia-900 flex flex-col items-center justify-center p-4">
       <div className="max-w-3xl w-full">
@@ -379,6 +407,12 @@ export default function JuegoRolPage() {
                     Tu nivel de <span className="text-red-400 font-semibold">{textoMetrica}</span> se ha agotado por completo. Las consecuencias han sido fatales para la misión.
                   </p>
                   <button
+                    onClick={copiarAlPortapapeles}
+                    className="bg-slate-600 hover:bg-slate-500 text-white font-bold uppercase tracking-widest px-6 py-3 rounded-lg transition-all hover:shadow-[0_0_15px_rgba(120,119,119,0.5)] cursor-pointer mt-2"
+                  >
+                    {copiado ? '✓ ¡Copiado al portapapeles!' : '📋 Compartir Crónica'}
+                  </button>
+                  <button
                     onClick={reiniciarPartida}
                     className="bg-red-600 hover:bg-red-500 text-white font-bold uppercase tracking-widest px-6 py-3 rounded-lg transition-all hover:shadow-[0_0_15px_rgba(239,68,68,0.5)] cursor-pointer mt-2"
                   >
@@ -395,6 +429,12 @@ export default function JuegoRolPage() {
                   <p className="text-slate-300 max-w-md">
                     Has alcanzado el desenlace de la historia habiendo mantenido tu <span className="text-emerald-400 font-semibold">{textoMetrica}</span> en un <span className="font-bold">{vida}%</span>.
                   </p>
+                  <button
+                    onClick={copiarAlPortapapeles}
+                    className="bg-slate-600 hover:bg-slate-500 text-white font-bold uppercase tracking-widest px-6 py-3 rounded-lg transition-all hover:shadow-[0_0_15px_rgba(120,119,119,0.5)] cursor-pointer mt-2"
+                  >
+                    {copiado ? '✓ ¡Copiado al portapapeles!' : '📋 Compartir Crónica'}
+                  </button>
                   <button
                     onClick={reiniciarPartida}
                     className="bg-emerald-600 hover:bg-emerald-500 text-white font-bold uppercase tracking-widest px-6 py-3 rounded-lg transition-all hover:shadow-[0_0_15px_rgba(16,185,129,0.5)] cursor-pointer mt-2"
