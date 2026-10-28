@@ -169,12 +169,12 @@ export default function JuegoRolPage() {
   };
 
   const elegirOpcion = (opcionSeleccionada: string) => {
-    const esTurnoFinal = turnos >= 7;
+    const esTurnoFinal = turnos >= 9; // TURNO 10 es el ultimo
 
     let textoEleccion = `El jugador elige la acción: "${opcionSeleccionada}". Estado actual de ${textoMetrica}: ${vida}/100. Recuerda escribir exactamente 2 párrafos de unas 4 líneas y mantener un lenguaje neutro e inclusivo en segunda persona.`;
 
     if (esTurnoFinal) {
-      textoEleccion += " INSTRUCCIÓN OBLIGATORIA DEL SISTEMA: Este es el TURNO 8 y FINAL. Narra la conclusión definitiva en 2 párrafos y devuelve la lista 'opciones' totalmente VACÍA [].";
+      textoEleccion += " INSTRUCCIÓN OBLIGATORIA DEL SISTEMA: Este es el TURNO 10 y FINAL. Narra la conclusión definitiva en 2 párrafos y devuelve la lista 'opciones' totalmente VACÍA [].";
     }
 
     const nuevoHistorial: MensajeHistorial[] = [
@@ -285,7 +285,7 @@ export default function JuegoRolPage() {
               <div className="flex items-center gap-2 font-mono text-xs uppercase tracking-wider text-slate-400">
                 <span>Progreso:</span>
                 <span className="text-fuchsia-400 font-bold text-sm bg-slate-950 px-2.5 py-1 rounded border border-fuchsia-900/50">
-                  Turno {turnos} / 8
+                  Turno {turnos} / 10
                 </span>
               </div>
             </div>
